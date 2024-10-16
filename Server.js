@@ -1,6 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const { readFileSync } = require("fs");
+const { readFile } = require("fs/promises");
 const app = express();
 app.use(cors({ origin: "*" }));
 const server = require("http").createServer(app);
@@ -47,6 +49,15 @@ io.on("connection", (socket) => {
     socket.emit("ping", { message: "ping" });
 
     USERS[username] = socket;
+});
+
+
+
+
+app.get("/", (req, res) => {
+    readFile("./index.html").then(e => {
+        res.send(e.toString());
+    });
 });
 
 
