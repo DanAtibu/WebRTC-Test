@@ -17,9 +17,10 @@
   </head>
 
   <body>
-    <input id="receiver" />
-    <button id="call_button">Make Call</button>
+    <input id="receiver" placeholder="Enter Your Friend Name" />
+    <button id="make_call_button">Make Call</button>
     <button id="accept_call_button">Accept Call</button>
+    <button id="stop_call_button">Stop Call</button>
 
     <div>
       <video
@@ -88,15 +89,9 @@
 
     const socket = io({
       reconnectionDelayMax: 10000,
-      auth: {
-        token: "123",
-      },
-      query: {
-        username,
-      },
+      query: { username },
+      auth: { },
     });
-
-    socket.on("ping", (...args) => console.log("Ping ", args));
 
     socket.on("connect", () => console.log("Connected !"));
 
@@ -117,21 +112,24 @@
     });
 
     async function MakeCall() {
-      if (!GetReceiver()) return alert("Invalid receiver");
+      const receiver = GetReceiver();
+
+      if (!receiver) return alert("Invalid receiver");
 
       LocalStream = await GetUserMedia();
 
-      pc.onicecandidate = (e) => {
-        const message = {
+      pc.onicecandidate = ({ candidate }) => {
+        console.log("In MakeCall onicecandidate : ", candidate);
+
+        // if (candidate) {
+        socket.emit("candidate", {
           type: "candidate",
-          candidate: null,
-        };
-        if (e.candidate) {
-          message.candidate = e.candidate.candidate;
-          message.sdpMid = e.candidate.sdpMid;
-          message.sdpMLineIndex = e.candidate.sdpMLineIndex;
-        }
-        socket.emit("message", message);
+          receiver,
+          sdpMid: candidate?.sdpMid,
+          candidate: candidate?.candidate,
+          sdpMLineIndex: candidate?.sdpMLineIndex,
+        });
+        // }
       };
 
       pc.ontrack = (e) => (remote_video_element.srcObject = e.streams[0]);
@@ -141,11 +139,7 @@
       );
 
       const offer = await pc.createOffer();
-      socket.emit("offer", {
-        type: "offer",
-        sdp: offer.sdp,
-        receiver: GetReceiver(),
-      });
+      socket.emit("offer", { type: "offer", sdp: offer.sdp, receiver });
 
       await pc.setLocalDescription(offer);
     }
@@ -156,20 +150,19 @@
       console.log("RECEIVED CALL ", offer);
 
       pc.onicecandidate = ({ candidate }) => {
-        console.log("In onicecandidate : ", candidate);
-        
-        if (candidate) {
-          socket.emit("candidate", {
-            type: "candidate",
-            receiver: offer.sender,
-            sdpMid: candidate.sdpMid,
-            candidate: candidate.candidate,
-            sdpMLineIndex: candidate.sdpMLineIndex,
-          });
-        }
+        console.log("In HandlerCall onicecandidate : ", candidate);
+
+
+        socket.emit("candidate", {
+          type: "candidate",
+          receiver: offer.sender,
+          sdpMid: candidate?.sdpMid,
+          candidate: candidate?.candidate,
+          sdpMLineIndex: candidate?.sdpMLineIndex,
+        });
       };
 
-      pc.ontrack = (e) => remote_video_element.srcObject = e.streams[0];
+      pc.ontrack = (e) => (remote_video_element.srcObject = e.streams[0]);
       local_video_element.srcObject = LocalStream;
       LocalStream.getTracks().forEach((track) => pc.addTrack(track, LocalStream));
 
@@ -184,11 +177,12 @@
         receiver: offer.sender,
         sender: username,
       });
-
+      
       await pc.setLocalDescription(answer);
     }
 
-    document.getElementById("call_button").onclick = MakeCall;
+    document.getElementById("make_call_button").onclick = MakeCall;
+    // document.getElementById("stop_call_button").onclick = () => pc;
   </script>
 
   <script></script>

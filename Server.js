@@ -1,7 +1,6 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const { readFileSync } = require("fs");
 const { readFile } = require("fs/promises");
 const app = express();
 app.use(cors({ origin: "*" }));
@@ -13,15 +12,17 @@ const server = require("http").createServer(app);
 const io = require("socket.io")(server, { cors: { origin: "*" } });
 
 
+
+
 const USERS = {};
+
+
 
 
 io.on("connection", (socket) => {
     const { username } = socket.handshake.query;
 
-
     console.log("Connected : ", username);
-
 
     socket.on("message", (message) => {
         socket.broadcast.emit("message", message);
@@ -43,10 +44,6 @@ io.on("connection", (socket) => {
     socket.on("candidate", (payload) => {
         USERS[payload.receiver]?.emit("candidate", { ...payload, sender: username });
     });
-
-
-
-    socket.emit("ping", { message: "ping" });
 
     USERS[username] = socket;
 });
