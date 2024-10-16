@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC Client</title>
+    <style>
+      body {
+        padding: 3rem;
+      }
+      .video {
+        /* padding: 2rem; */
+        width: 100%;
+        background-color: #ddd;
+      }
+    </style>
+  </head>
+
+  <body>
+    <input id="receiver" />
+    <button id="call_button">Make Call</button>
+    <button id="accept_call_button">Accept Call</button>
+
+    <div>
+      <video
+        autoplay
+        playsinline
+        class="video"
+        id="local_video_element"
+      ></video>
+      <video
+        autoplay
+        playsinline
+        class="video"
+        id="remote_video_element"
+      ></video>
+    </div>
+  </body>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "socket.io-client": "https://cdn.socket.io/4.7.5/socket.io.esm.min.js"
+      }
+    }
+  </script>
+
+  <script>
+    function GetReceiver() {
+      const QueryParams = new URLSearchParams(window.location.search);
+      return (
+        QueryParams.get("receiver") || document.getElementById("receiver").value
+      );
+    }
+
+    async function GetUserMedia(params) {
+      return await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: { echoCancellation: true },
+      });
+    }
+  </script>
+
+  <script type="module">
+    import { io } from "socket.io-client";
+
+    var LocalStream;
+    const local_video_element = document.getElementById("local_video_element");
+    const remote_video_element = document.getElementById(
+      "remote_video_element"
+    );
+
+    const QueryParams = new URLSearchParams(window.location.search);
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        {
+          urls: [
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+          ],
+        },
+      ],
+      iceCandidatePoolSize: 10,
+    });
+
+    const username = QueryParams.get("username");
+
+    const socket = io("ws://192.168.40.95:3333", {
+      reconnectionDelayMax: 10000,
+      auth: {
+        token: "123",
+      },
+      query: {
+        username,
+      },
+    });
+
+    socket.on("ping", (...args) => console.log("Ping ", args));
+
+    socket.on("connect", () => console.log("Connected !"));
+
+    socket.on("offer", (e) => {
+      const accept_call_button = document.getElementById("accept_call_button");
+      accept_call_button.innerText = `Accept Call From ${e.sender}`;
+      accept_call_button.onclick = () => HandlerCall(e);
+    });
+
+    socket.on("answer", async ({ sdp, type, sender }) => {
+      console.log("RECEIVER ANSWER FROM : ", sdp, type, sender);
+      await pc.setRemoteDescription({ sdp, type });
+    });
+
+    socket.on("candidate", async (candidate) => {
+      console.log("CANDIDATE : ", candidate);
+      await pc.addIceCandidate(candidate);
+    });
+
+    async function MakeCall() {
+      if (!GetReceiver()) return alert("Invalid receiver");
+
+      LocalStream = await GetUserMedia();
+
+      pc.onicecandidate = (e) => {
+        const message = {
+          type: "candidate",
+          candidate: null,
+        };
+        if (e.candidate) {
+          message.candidate = e.candidate.candidate;
+          message.sdpMid = e.candidate.sdpMid;
+          message.sdpMLineIndex = e.candidate.sdpMLineIndex;
+        }
+        socket.emit("message", message);
+      };
+
+      pc.ontrack = (e) => (remote_video_element.srcObject = e.streams[0]);
+      local_video_element.srcObject = LocalStream;
+      LocalStream.getTracks().forEach((track) =>
+        pc.addTrack(track, LocalStream)
+      );
+
+      const offer = await pc.createOffer();
+      socket.emit("offer", {
+        type: "offer",
+        sdp: offer.sdp,
+        receiver: GetReceiver(),
+      });
+
+      await pc.setLocalDescription(offer);
+    }
+
+    async function HandlerCall(offer) {
+      // { sender, receiver, type, sdp }
+      LocalStream = await GetUserMedia();
+      console.log("RECEIVED CALL ", offer);
+
+      pc.onicecandidate = ({ candidate }) => {
+        console.log("In onicecandidate : ", candidate);
+        
+        if (candidate) {
+          socket.emit("candidate", {
+            type: "candidate",
+            receiver: offer.sender,
+            sdpMid: candidate.sdpMid,
+            candidate: candidate.candidate,
+            sdpMLineIndex: candidate.sdpMLineIndex,
+          });
+        }
+      };
+
+      pc.ontrack = (e) => remote_video_element.srcObject = e.streams[0];
+      local_video_element.srcObject = LocalStream;
+      LocalStream.getTracks().forEach((track) => pc.addTrack(track, LocalStream));
+
+      // Accept the offer by set it as a remote description
+      await pc.setRemoteDescription(offer);
+
+      //  Build and send the answer
+      const answer = await pc.createAnswer();
+      socket.emit("answer", {
+        type: "answer",
+        sdp: answer.sdp,
+        receiver: offer.sender,
+        sender: username,
+      });
+
+      await pc.setLocalDescription(answer);
+    }
+
+    document.getElementById("call_button").onclick = MakeCall;
+  </script>
+
+  <script></script>
+</html>

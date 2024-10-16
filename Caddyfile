@@ -1,0 +1,4 @@
+192.168.40.95:9999 {
+	reverse_proxy localhost:3333
+	tls internal
+}
