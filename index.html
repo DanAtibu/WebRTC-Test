@@ -86,7 +86,7 @@
 
     const username = QueryParams.get("username");
 
-    const socket = io("ws://192.168.40.95:3333", {
+    const socket = io({
       reconnectionDelayMax: 10000,
       auth: {
         token: "123",
